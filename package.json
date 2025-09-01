@@ -1,0 +1,43 @@
+{
+  "name": "lgs-super00x",
+  "version": "1.0.0",
+  "description": "LGS Super - Comprehensive Educational Platform for Turkish University Entrance Exam Preparation",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "server:dev": "cd server && npm run dev",
+    "client:dev": "cd client && npm run dev",
+    "build": "npm run client:build && npm run server:build",
+    "client:build": "cd client && npm run build",
+    "server:build": "cd server && npm run build",
+    "start": "cd server && npm start",
+    "test": "npm run client:test && npm run server:test",
+    "client:test": "cd client && npm test",
+    "server:test": "cd server && npm test",
+    "lint": "npm run client:lint && npm run server:lint",
+    "client:lint": "cd client && npm run lint",
+    "server:lint": "cd server && npm run lint",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "setup": "npm install && cd client && npm install && cd ../server && npm install"
+  },
+  "keywords": [
+    "LGS",
+    "education",
+    "exam",
+    "preparation",
+    "turkish",
+    "university",
+    "entrance"
+  ],
+  "author": "TOZ Solutions",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}

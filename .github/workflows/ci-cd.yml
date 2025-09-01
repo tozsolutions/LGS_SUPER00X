@@ -1,0 +1,214 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '18'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Test Jobs
+  test-client:
+    name: Test Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'client/package-lock.json'
+
+      - name: Install dependencies
+        run: |
+          cd client
+          npm ci
+
+      - name: Run linting
+        run: |
+          cd client
+          npm run lint
+
+      - name: Run tests
+        run: |
+          cd client
+          npm run test -- --coverage --watchAll=false
+
+      - name: Build application
+        run: |
+          cd client
+          npm run build
+
+  test-server:
+    name: Test Backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'server/package-lock.json'
+
+      - name: Install dependencies
+        run: |
+          cd server
+          npm ci
+
+      - name: Run linting
+        run: |
+          cd server
+          npm run lint
+
+      - name: Generate Prisma client
+        run: |
+          cd server
+          npx prisma generate
+
+      - name: Run database migrations
+        run: |
+          cd server
+          npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+
+      - name: Run tests
+        run: |
+          cd server
+          npm run test -- --coverage
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          JWT_SECRET: test-secret
+          NODE_ENV: test
+
+  # Security Scan
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # Build and Push Docker Images
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [test-client, test-server, security-scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      image-client: ${{ steps.image.outputs.image-client }}
+      image-server: ${{ steps.image.outputs.image-server }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push server image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-server:latest,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-server:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push client image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./client
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-client:latest,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-client:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Output image names
+        id: image
+        run: |
+          echo "image-client=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-client:${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "image-server=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-server:${{ github.sha }}" >> $GITHUB_OUTPUT
+
+  # Deploy to Production
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy notification
+        run: |
+          echo "🚀 Deploying to production..."
+          echo "Client image: ${{ needs.build.outputs.image-client }}"
+          echo "Server image: ${{ needs.build.outputs.image-server }}"
+
+      # Add actual deployment steps here
+      # This could include:
+      # - Deploying to Kubernetes cluster
+      # - Updating docker-compose on server
+      # - Running database migrations
+      # - Health checks
+      # - Rollback mechanism
+
+      - name: Deployment success notification
+        run: |
+          echo "✅ Deployment completed successfully!"

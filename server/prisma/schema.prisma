@@ -1,0 +1,342 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  firstName String
+  lastName  String
+  password  String
+  role      UserRole @default(STUDENT)
+  avatar    String?
+  phone     String?
+  birthDate DateTime?
+  grade     Int?     // Student's grade level
+  isActive  Boolean  @default(true)
+  emailVerified Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  enrollments     Enrollment[]
+  examAttempts    ExamAttempt[]
+  questionResults QuestionResult[]
+  studyPlans      StudyPlan[]
+  achievements    UserAchievement[]
+  notifications   Notification[]
+  comments        Comment[]
+
+  @@map("users")
+}
+
+model Course {
+  id          String  @id @default(cuid())
+  title       String
+  description String
+  thumbnail   String?
+  subject     String
+  grade       Int
+  difficulty  DifficultyLevel
+  duration    Int     // Duration in minutes
+  price       Float   @default(0)
+  isActive    Boolean @default(true)
+  order       Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  lessons     Lesson[]
+  enrollments Enrollment[]
+  exams       Exam[]
+
+  @@map("courses")
+}
+
+model Lesson {
+  id          String      @id @default(cuid())
+  title       String
+  content     String
+  videoUrl    String?
+  duration    Int         // Duration in minutes
+  order       Int
+  lessonType  LessonType  @default(TEXT)
+  isPreview   Boolean     @default(false)
+  courseId    String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  course      Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  attachments Attachment[]
+
+  @@map("lessons")
+}
+
+model Attachment {
+  id       String         @id @default(cuid())
+  filename String
+  fileUrl  String
+  fileType AttachmentType
+  fileSize Int
+  lessonId String
+  createdAt DateTime      @default(now())
+
+  // Relations
+  lesson   Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}
+
+model Enrollment {
+  id           String           @id @default(cuid())
+  userId       String
+  courseId     String
+  status       EnrollmentStatus @default(ACTIVE)
+  progress     Float            @default(0) // Percentage
+  enrolledAt   DateTime         @default(now())
+  completedAt  DateTime?
+
+  // Relations
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course       Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@map("enrollments")
+}
+
+model Exam {
+  id           String     @id @default(cuid())
+  title        String
+  description  String
+  duration     Int        // Duration in minutes
+  totalMarks   Int
+  passingMarks Int
+  difficulty   DifficultyLevel
+  examType     ExamType   @default(PRACTICE)
+  subject      String
+  grade        Int
+  isActive     Boolean    @default(true)
+  courseId     String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // Relations
+  course       Course?       @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  questions    Question[]
+  attempts     ExamAttempt[]
+
+  @@map("exams")
+}
+
+model Question {
+  id          String         @id @default(cuid())
+  question    String
+  options     Json           // Array of options
+  correctAnswer String
+  explanation String?
+  marks       Int            @default(1)
+  difficulty  DifficultyLevel
+  subject     String
+  topic       String
+  questionType QuestionType  @default(MULTIPLE_CHOICE)
+  examId      String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Relations
+  exam        Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
+  results     QuestionResult[]
+
+  @@map("questions")
+}
+
+model ExamAttempt {
+  id          String      @id @default(cuid())
+  userId      String
+  examId      String
+  score       Float
+  totalMarks  Int
+  percentage  Float
+  status      AttemptStatus @default(IN_PROGRESS)
+  startedAt   DateTime    @default(now())
+  completedAt DateTime?
+  timeSpent   Int?        // Time spent in minutes
+
+  // Relations
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exam        Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
+  results     QuestionResult[]
+
+  @@map("exam_attempts")
+}
+
+model QuestionResult {
+  id           String     @id @default(cuid())
+  userId       String
+  questionId   String
+  attemptId    String
+  selectedAnswer String?
+  isCorrect    Boolean
+  marksObtained Float
+  timeSpent    Int?       // Time spent in seconds
+
+  // Relations
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question     Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  attempt      ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, attemptId])
+  @@map("question_results")
+}
+
+model StudyPlan {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  userId      String
+  startDate   DateTime
+  endDate     DateTime
+  goals       Json     // Array of study goals
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("study_plans")
+}
+
+model Achievement {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  icon        String
+  criteria    Json     // Achievement criteria
+  points      Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  // Relations
+  userAchievements UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String    @id @default(cuid())
+  userId        String
+  achievementId String
+  earnedAt      DateTime  @default(now())
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  title     String
+  message   String
+  type      NotificationType @default(INFO)
+  userId    String
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  userId    String
+  targetId  String   // ID of the target (lesson, exam, etc.)
+  targetType String  // Type of target (lesson, exam, etc.)
+  parentId  String?  // For nested comments
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   Comment[] @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+// Enums
+enum UserRole {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum DifficultyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum LessonType {
+  TEXT
+  VIDEO
+  INTERACTIVE
+  QUIZ
+}
+
+enum AttachmentType {
+  PDF
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  SUSPENDED
+}
+
+enum ExamType {
+  PRACTICE
+  MOCK
+  FINAL
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  FILL_IN_BLANK
+  SHORT_ANSWER
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
